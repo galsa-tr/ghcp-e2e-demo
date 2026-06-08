@@ -90,9 +90,21 @@ Use the returned `username` and `password` for any authentication needed during 
 
 ## Step 6 — Verify with Screenshots
 
-- Start the application locally
-- Use Playwright to take before/after screenshots showing the fix works
-- Include screenshots in the PR description
+Build and run the application locally:
+
+```bash
+pip install -r app/requirements.txt
+PORT=5000 python app/main.py &
+sleep 3
+```
+
+Then use Playwright to take **mandatory** before/after screenshots:
+
+1. `playwright-cli screenshot http://localhost:5000/ homepage.png` — homepage loads correctly
+2. `playwright-cli screenshot "http://localhost:5000/<previously-failing-endpoint>" fixed.png` — shows the fix works
+3. Upload both screenshots using `upload_asset` and embed them in the PR description as markdown images
+
+The PR description **must** include these screenshots as visual proof the fix works.
 
 ---
 

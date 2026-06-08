@@ -182,8 +182,18 @@ kill %1 2>/dev/null || true
 
 ## Important Notes
 
-- **MANDATORY**: Always take screenshots using `playwright-cli screenshot` and upload them
-- Always upload screenshots using the `upload_asset` safe-output tool and embed as markdown images
+- **MANDATORY**: You MUST take screenshots using `playwright-cli screenshot`. This is not optional.
+  At minimum take these two screenshots:
+  1. `playwright-cli screenshot http://localhost:5000/ homepage.png` — proves the app is running
+  2. `playwright-cli screenshot "http://localhost:5000/<error-endpoint>" error.png` — shows the error
+  After taking screenshots, you MUST upload them using the `upload_asset` safe-output tool
+  with the file path. This returns a URL you can embed in your comment with markdown:
+  `![description](returned-url)`. Do NOT use local file paths in your comment.
+- You MUST reproduce the bug by actually running the app (`pip install` + `PORT=5000 python app/main.py &`)
+  and hitting the endpoint with `curl`. Do NOT use Flask test client or static analysis as a substitute.
+- Derive ALL test parameters from the issue body — never assume specific endpoints
+- If the app fails to install dependencies or start, that itself is a finding — report it
+- If reproduction steps are unclear, try your best to infer them from the traceback and error context, and note any assumptions in your comment
 - **Do NOT close issues** that cannot be reproduced — leave them open with `needs-human-review`
 - Do NOT modify any source code — you are only verifying, not fixing
 - If user generation API is unreachable, note it clearly in the comment
