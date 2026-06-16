@@ -7,7 +7,7 @@ name: Poll Jira for New Bugs
 
 on:
   schedule:
-    - cron: '0 * * * *'  # every hour
+    - cron: '0 */2 * * *'  # every 2 hours
   workflow_dispatch:       # allow manual trigger
 
 permissions:
