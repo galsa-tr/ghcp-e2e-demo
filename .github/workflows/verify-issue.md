@@ -85,9 +85,13 @@ Extract:
 
 ---
 
-## Step 2 — Generate Test User
+## Step 2 — Ensure Test Credentials
 
-Call the user generation API to create a suitable test user based on what the bug requires:
+Check if the issue body contains a username and password.
+
+**If credentials ARE present in the issue**: use them directly.
+
+**If credentials are NOT present**: call the user generation API to create a suitable test user:
 
 ```bash
 curl -s -X POST http://stg-usergen.dev.local/api/v1/UserGeneration/create \
