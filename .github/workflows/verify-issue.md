@@ -1,8 +1,8 @@
 ---
 description: >
   Agentic workflow that verifies auto-reported bugs by reproducing them
-  dynamically using Playwright, then classifies the issue
-  as a verified bug or leaves it open for human review.
+  on the eToro staging environment using Playwright, then classifies the
+  issue as a verified bug or leaves it open for human review.
 
 name: Verify Auto-Reported Issue
 
@@ -21,25 +21,19 @@ engine: copilot
 network:
   allowed:
     - defaults
-    - python
+    - testenv-main.front.stg.etoro.com
+    - stg-usergen.dev.local
 
 tools:
   github:
     toolsets: [issues]
 
   bash:
-    - pip:*
-    - pip3:*
-    - python:*
-    - python3:*
     - npm:*
     - npx:*
     - cat:*
     - curl:*
     - sleep:*
-    - kill:*
-    - lsof:*
-    - playwright-cli:*
 
   playwright:
     mode: cli
@@ -65,15 +59,18 @@ timeout-minutes: 15
 
 # Bug Verification Agent
 
-You are a QA engineer verifying an auto-reported bug. Your job is to:
-1. Ensure you have valid credentials for testing
-2. Reproduce the reported error
-3. Take evidence screenshots
+You are a QA engineer verifying a bug reported against the eToro staging environment.
+Your job is to:
+1. Generate a test user
+2. Log in to the staging environment
+3. Reproduce the reported bug using Playwright
 4. Classify the issue
 
 ## Context
 
 You are verifying issue **#${{ github.event.issue.number }}**: "${{ github.event.issue.title }}"
+
+**Staging environment**: `https://testenv-main.front.stg.etoro.com/`
 
 ---
 
@@ -81,23 +78,16 @@ You are verifying issue **#${{ github.event.issue.number }}**: "${{ github.event
 
 Use the GitHub API to fetch the full issue body for issue #${{ github.event.issue.number }}.
 
-Extract the following:
-- **From "Reproduction Steps"**: The exact HTTP method, endpoint, and parameters
-- **From "Error Details"**: The error type and message you expect to see
-- **From "Traceback"**: The full stack trace
-- **From "Request Context"**: Additional request details
-- **Credentials**: Any username/password mentioned in the issue body
+Extract:
+- **Reproduction Steps**: the exact user action or URL path that triggers the bug
+- **Error Details**: what error or wrong behavior is expected
+- **Affected Area**: which part of the app (e.g. login, portfolio, feed, trading)
 
 ---
 
-## Step 2 — Ensure Valid Test Credentials
+## Step 2 — Generate Test User
 
-Check if the issue body contains a username and password for testing.
-
-**If credentials ARE present in the issue**: use them.
-
-**If credentials are NOT present**:
-- Call the user generation API to create a suitable test user:
+Call the user generation API to create a suitable test user based on what the bug requires:
 
 ```bash
 curl -s -X POST http://stg-usergen.dev.local/api/v1/UserGeneration/create \
@@ -105,64 +95,66 @@ curl -s -X POST http://stg-usergen.dev.local/api/v1/UserGeneration/create \
   -d '{"message": "Create a user suitable for testing: <describe what the bug requires based on the issue>"}'
 ```
 
-- Extract the `username` and `password` from the response
-- Note the credentials in your findings comment
-- If the user generation API is unreachable, add a comment explaining this and add the label `needs-human-review`, but continue trying to reproduce without credentials if possible
+Extract `username` and `password` from the response.
+
+If the API is **unreachable**: add label `needs-human-review`, add a comment explaining the API was unreachable, and stop — do NOT attempt to reproduce without credentials.
 
 ---
 
-## Step 3 — Install Dependencies and Run the Application
+## Step 3 — Log In to Staging
 
-Install the Python dependencies and start the Flask app in the background.
-**Important**: Port 8080 is reserved by the runner infrastructure. Use port 5000.
+Use Playwright to navigate to the staging environment and log in:
 
-```bash
-pip install -r app/requirements.txt
-PORT=5000 python app/main.py &
-sleep 3
-curl -s http://localhost:5000/health
-```
+1. Take a screenshot of the login page:
+   `playwright-cli screenshot https://testenv-main.front.stg.etoro.com/login login-page.png`
 
-Wait for the health check to return `{"status": "healthy"}`.
-If the app fails to start, report that as your finding.
+2. Fill in the login form with the generated credentials:
+   - Username field: enter the generated username
+   - Password field: enter the generated password
+   - Submit the form
+
+3. Wait for navigation to confirm login succeeded (look for the dashboard/home page).
+
+4. Take a screenshot after login:
+   `playwright-cli screenshot https://testenv-main.front.stg.etoro.com/ logged-in.png`
+
+If login **fails**: add label `needs-human-review`, comment that login failed with the generated credentials, and stop.
 
 ---
 
-## Step 4 — Reproduce the Error
+## Step 4 — Reproduce the Bug
 
-Using the reproduction steps extracted from the issue:
+Using the reproduction steps extracted from the issue, navigate to the affected area and attempt to reproduce:
 
-1. `playwright-cli screenshot http://localhost:5000/ homepage.png` — confirm app is running
-2. Reproduce the error by navigating to the exact endpoint described in the issue
-3. Use `curl -s -o /dev/null -w "%{http_code}" "http://localhost:5000/<path>"` to verify HTTP status
-4. Use `curl -s "http://localhost:5000/<path>"` to capture the error response body
-5. Take a screenshot of the error: `playwright-cli screenshot "http://localhost:5000/<path>" error.png`
-
-**Important**: Derive ALL test parameters from the issue body — never hardcode.
+1. Navigate to the relevant page/URL
+2. Perform the action that should trigger the bug
+3. Take a screenshot of the result:
+   `playwright-cli screenshot "https://testenv-main.front.stg.etoro.com/<path>" bug-reproduction.png`
+4. Note the actual behavior vs. the expected behavior from the issue
 
 ---
 
 ## Step 5 — Classify the Issue
 
-### If the error IS reproducible:
+### If the bug IS reproducible:
 
 - Add a detailed comment with:
-  - Confirmation that the error was reproduced
-  - Screenshots (upload and embed as markdown images)
-  - The HTTP status code received
-  - The exact request used to reproduce it
-  - Credentials used (username only, never log passwords)
-  - Root cause analysis
-  - Recommendation to assign the `bug-solver` agent for a fix
+  - Confirmation that the bug was reproduced
+  - Exact steps used (URL, actions performed)
+  - Username used for testing (never log passwords)
+  - Screenshots embedded as markdown images (upload first, use returned URLs)
+  - Actual vs expected behavior
+  - Recommendation to assign the `bug-solver` agent
 - Add label `verified-bug`
 - Remove label `needs-verification`
 
-### If the error is NOT reproducible:
+### If the bug is NOT reproducible:
 
 - Add a comment explaining:
-  - What you tested (exact requests made)
-  - What the actual result was (with screenshots)
-  - Why the error could not be reproduced (e.g., missing credentials, blocking popup, unclear steps, environment issue)
+  - What you tested (exact steps, URLs visited)
+  - What the actual result was
+  - Why it could not be reproduced (e.g. cannot login, feature works as expected, unclear steps)
+  - Screenshots of what was observed
 - Add label `not-reproducible`
 - Add label `needs-human-review`
 - Remove label `needs-verification`
@@ -170,30 +162,11 @@ Using the reproduction steps extracted from the issue:
 
 ---
 
-## Step 6 — Clean Up
-
-Stop the background Python process:
-
-```bash
-kill %1 2>/dev/null || true
-```
-
----
-
 ## Important Notes
 
-- **MANDATORY**: You MUST take screenshots using `playwright-cli screenshot`. This is not optional.
-  At minimum take these two screenshots:
-  1. `playwright-cli screenshot http://localhost:5000/ homepage.png` — proves the app is running
-  2. `playwright-cli screenshot "http://localhost:5000/<error-endpoint>" error.png` — shows the error
-  After taking screenshots, you MUST upload them using the `upload_asset` safe-output tool
-  with the file path. This returns a URL you can embed in your comment with markdown:
-  `![description](returned-url)`. Do NOT use local file paths in your comment.
-- You MUST reproduce the bug by actually running the app (`pip install` + `PORT=5000 python app/main.py &`)
-  and hitting the endpoint with `curl`. Do NOT use Flask test client or static analysis as a substitute.
-- Derive ALL test parameters from the issue body — never assume specific endpoints
-- If the app fails to install dependencies or start, that itself is a finding — report it
-- If reproduction steps are unclear, try your best to infer them from the traceback and error context, and note any assumptions in your comment
+- **MANDATORY**: Always take screenshots at each key step and upload them. Embed in your comment using markdown: `![description](returned-url)`
+- **Never log passwords** — only log the username in comments
+- Derive ALL reproduction steps from the issue body — never assume specific behavior
+- If reproduction steps are unclear, try to infer from the error description and note your assumptions
 - **Do NOT close issues** that cannot be reproduced — leave them open with `needs-human-review`
 - Do NOT modify any source code — you are only verifying, not fixing
-- If user generation API is unreachable, note it clearly in the comment
