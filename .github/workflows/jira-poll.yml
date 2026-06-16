@@ -9,6 +9,18 @@ jobs:
   poll:
     runs-on: ubuntu-latest
     steps:
+      - name: Inspect Jira fields (debug - remove after confirming fields)
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_BASE_URL: https://etoro.atlassian.net
+        run: |
+          JQL='reporter = "Connector for Salesforce & Jira" AND issuetype = Bug AND priority in (P2,P3,P4) ORDER BY created DESC'
+          curl -s -G "$JIRA_BASE_URL/rest/api/3/search" \
+            --data-urlencode "jql=$JQL" \
+            --data-urlencode "maxResults=1" \
+            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Accept: application/json" | jq '.issues[0].fields | keys'
+
       - name: Query Jira and create GitHub issues
         env:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
