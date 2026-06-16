@@ -12,24 +12,30 @@ jobs:
       - name: Inspect Jira fields (debug - remove after confirming fields)
         env:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_EMAIL: galsa@etoro.com
           JIRA_BASE_URL: https://etoro.atlassian.net
         run: |
-          JQL='reporter = "Connector for Salesforce & Jira" AND issuetype = Bug AND priority in (P2,P3,P4) ORDER BY created DESC'
-          curl -s -G "$JIRA_BASE_URL/rest/api/3/search" \
+          AUTH=$(echo -n "$JIRA_EMAIL:$JIRA_TOKEN" | base64)
+          JQL='issuetype = Bug AND priority in (P2,P3,P4) ORDER BY created DESC'
+          RESPONSE=$(curl -s -G "$JIRA_BASE_URL/rest/api/3/search" \
             --data-urlencode "jql=$JQL" \
             --data-urlencode "maxResults=1" \
-            -H "Authorization: Bearer $JIRA_TOKEN" \
-            -H "Accept: application/json" | jq '.issues[0].fields | keys'
+            -H "Authorization: Basic $AUTH" \
+            -H "Accept: application/json")
+          echo "HTTP response preview:"
+          echo "$RESPONSE" | jq '{total: .total, error: .errorMessages, fields: (.issues[0].fields | keys)}' 2>/dev/null || echo "$RESPONSE" | head -c 500
 
       - name: Query Jira and create GitHub issues
         env:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_EMAIL: galsa@etoro.com
           GH_TOKEN: ${{ secrets.GH_PAT }}
           JIRA_BASE_URL: https://etoro.atlassian.net
           GITHUB_REPO: galsa-tr/ghcp-e2e-demo
         run: |
           set -euo pipefail
 
+          AUTH=$(echo -n "$JIRA_EMAIL:$JIRA_TOKEN" | base64)
           JQL='reporter = "Connector for Salesforce & Jira" AND issuetype = Bug AND priority in (P2,P3,P4) AND labels != "sent-to-github" AND status not in (Done,Closed,Resolved) ORDER BY created ASC'
 
           echo "Querying Jira..."
@@ -37,7 +43,7 @@ jobs:
             --data-urlencode "jql=$JQL" \
             --data-urlencode "fields=summary,description,priority,status,reporter,comment,environment" \
             --data-urlencode "maxResults=20" \
-            -H "Authorization: Bearer $JIRA_TOKEN" \
+            -H "Authorization: Basic $AUTH" \
             -H "Accept: application/json")
 
           TOTAL=$(echo "$RESPONSE" | jq '.total // 0')
@@ -83,13 +89,13 @@ jobs:
 
             # Stamp Jira ticket with sent-to-github label
             curl -s -X PUT "$JIRA_BASE_URL/rest/api/3/issue/$KEY" \
-              -H "Authorization: Bearer $JIRA_TOKEN" \
+              -H "Authorization: Basic $AUTH" \
               -H "Content-Type: application/json" \
               -d '{"update": {"labels": [{"add": "sent-to-github"}]}}' > /dev/null
 
             # Add comment to Jira ticket
             curl -s -X POST "$JIRA_BASE_URL/rest/api/3/issue/$KEY/comment" \
-              -H "Authorization: Bearer $JIRA_TOKEN" \
+              -H "Authorization: Basic $AUTH" \
               -H "Content-Type: application/json" \
               -d "$(jq -n --arg url "$GH_ISSUE_URL" \
                 '{body: {type: "doc", version: 1, content: [{type: "paragraph", content: [{type: "text", text: ("GitHub issue created: " + $url + ". Automated verification flow triggered.")}]}]}}')" > /dev/null
